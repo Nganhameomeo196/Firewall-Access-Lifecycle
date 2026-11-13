@@ -1,181 +1,142 @@
-# AccessFlow — Quản lý vòng đời quyền truy cập mạng và tường lửa động
+# AccessFlow V2 — Network Access Lifecycle & Firewall Policy Platform
 
-**Định hướng BTCN đã chốt với giảng viên:** *Xây dựng chương trình mô phỏng tường lửa và kiểm soát truy cập mạng.* Phần mềm hiện thực đề tài ở mức **quản lý truy cập dựa trên nghiệp vụ**: luật firewall không phải 5 dòng JSON cố định, mà được **sinh từ quyền được phê duyệt**, kiểm toán, giám sát và thu hồi khi hết hạn.
+**Đề tài BTCN đã đăng ký:** *Xây dựng chương trình mô phỏng tường lửa và kiểm soát truy cập mạng.*
 
-**Công nghệ:** Python 3.10+, SQLite (`sqlite3` có sẵn), Streamlit (giao diện web), unittest (kiểm thử); chạy cục bộ trên Windows, macOS hoặc Linux. Không cần tài khoản đám mây.
+**Vấn đề thực tế:** Tại doanh nghiệp, quyền truy cập tài nguyên thường được cấp qua nhiều bước thủ công. Nếu không truy vết nguồn gốc, duyệt theo vai trò, xác minh thay đổi và thu hồi theo vòng đời, chính sách tường lửa dễ trở nên khó quản lý hoặc cấp quá nhiều quyền. AccessFlow V2 mô hình hóa toàn bộ quy trình **yêu cầu nghiệp vụ → RBAC → phê duyệt → chính sách tường lửa → kiểm chứng → giám sát → thu hồi**.
 
-> **Phạm vi bảo mật:** Đây là *prototype lab*, không phải dịch vụ quản lý danh tính đã harden cho production. Ứng dụng không bắt gói tin, không thực thi/triển khai nftables, không chứng thực quyền sở hữu địa chỉ IP của thiết bị, không tích hợp DHCP/IdP/VPN. Không public Streamlit ra Internet. Các tài khoản demo và mật khẩu mặc định chỉ để học tập.
+**Lưu ý trung thực:** Đây là **prototype cục bộ**, không phải thiết bị tường lửa thật, không chặn packet, không tự áp dụng nftables và **không phải IAM production**. Đừng công khai ứng dụng ra Internet hoặc dùng các tài khoản demo trong môi trường thực tế.
 
-## I. Chạy từng bước trên Windows bằng VS Code
+![Giao diện tổng quan AccessFlow V2](docs/dashboard_preview.png)
 
-**1.** Giải nén ZIP. Vào thư mục `Firewall_Access_Lifecycle`, nơi thấy `app.py`, `cli.py`, `requirements.txt`, thư mục `core/` và `tests/`.
+## 1. Cài đặt và chạy trên Windows bằng VS Code
 
-**2.** VS Code → **File → Open Folder** → chọn đúng thư mục đó. Chọn **Terminal → New Terminal**. Kiểm tra Python:
+**Yêu cầu:** Python 3.10 trở lên (Python 3.13 của bạn dùng được). Không cần Node.js, npm hay Streamlit. Kết nối Internet chỉ để cài thư viện Python lần đầu.
 
-```powershell
-python --version
-```
-
-Nếu máy chỉ nhận `py`, hãy thay `python` bằng `py` trong các lệnh tiếp theo.
-
-**3.** Cài Streamlit:
+1. Giải nén ZIP rồi vào thư mục `AccessFlow_V2` (nơi có `run.py`, `requirements.txt`, `backend/`, `web/` và `core/`).
+2. Trong VS Code: **File → Open Folder** chọn `AccessFlow_V2` → **Terminal → New Terminal**.
+3. Chạy lần lượt:
 
 ```powershell
 python -m pip install -r requirements.txt
+python run.py
 ```
 
-**4.** Chạy ứng dụng:
+4. Trình duyệt mở **http://127.0.0.1:8000**. Nếu máy báo `python` không tồn tại, thay bằng `py`.
+5. Để dừng: nhấn `Ctrl+C` ở Terminal. Các dữ liệu thêm/sửa vẫn được lưu trong `runtime/access.sqlite3`.
 
-```powershell
-python -m streamlit run app.py
-```
+Có thể nhấn đúp `install_windows.bat` rồi `run_windows.bat` để cài/chạy. Nếu port 8000 bị chiếm, dùng `python run.py --port 8001` rồi vào `http://127.0.0.1:8001`.
 
-Lần đầu Streamlit có thể hỏi email → để trống rồi bấm Enter. Mở **http://localhost:8501** trong Chrome/Edge. Nếu V2/V3 cũ còn chiếm cổng, nhấn `Ctrl+C` ở Terminal cũ hoặc chạy:
+**Tài khoản lab** (tất cả có mật khẩu mặc định **`Demo@2026!`**):
 
-```powershell
-python -m streamlit run app.py --server.port 8502
-```
-
-**5.** Ở lần chạy đầu, chương trình tự khởi tạo `runtime/access.sqlite3` và tài khoản lab. Đăng nhập:
-
-| Tài khoản | Vai trò hệ thống | Vai trò nghiệp vụ | Mật khẩu **lab** |
+| Username | System role | Business role | Công việc thử nghiệm |
 |---|---|---|---|
-| `admin` | ADMIN | IT | `Demo@2026!` |
-| `approver` | APPROVER | IT | `Demo@2026!` |
-| `linh` | EMPLOYEE | ACCOUNTING | `Demo@2026!` |
-| `mai` | EMPLOYEE | HR | `Demo@2026!` |
-| `nam` | EMPLOYEE | SALES | `Demo@2026!` |
-| `quang` | EMPLOYEE | ACCOUNTING | `Demo@2026!` |
+| `admin` | `ADMIN` | `IT` | Tạo người dùng, tài nguyên, role entitlement |
+| `approver` | `APPROVER` | `IT` | Xét duyệt/thu hồi, kiểm toán và nhập log |
+| `nam` | `EMPLOYEE` | `SALES` | Gửi phiếu truy cập CRM |
+| `linh` | `EMPLOYEE` | `ACCOUNTING` | Yêu cầu ứng dụng kế toán |
+| `mai` | `EMPLOYEE` | `HR` | Yêu cầu ứng dụng nhân sự |
+| `quang` | `EMPLOYEE` | `ACCOUNTING` | Phiếu mẫu chờ duyệt |
 
-**Đổi mật khẩu trong mục 6** nếu muốn lưu dữ liệu lâu dài. Các tài khoản trên dùng thông tin giả định. Đừng đưa mật khẩu này lên một ứng dụng có thể truy cập từ Internet.
+Đổi mật khẩu tại **Vòng đời & nhật ký → Đổi mật khẩu** nếu muốn giữ dữ liệu lab lâu dài. Chỉ dùng trên localhost.
 
-**6.** Nhấn `Ctrl+C` ở Terminal chạy Streamlit để tắt. Dữ liệu được lưu trong SQLite: tắt/mở ứng dụng **không làm mất thay đổi**.
+## 2. Sáu nhóm chức năng (và trang tổng quan)
 
-## II. Sáu chức năng thực sự hoạt động
+| Phân hệ | Hành động thực sự được thực hiện |
+|---|---|
+| **1. Tài nguyên & danh tính** | Tạo và xem **riêng** các máy chủ, dịch vụ và tài khoản; máy chủ chưa có dịch vụ vẫn hiện. Báo trùng IP bằng tiếng Việt, không văng lỗi SQLite. |
+| **2. Vai trò & quyền chuẩn** | Khai báo `ROLE → SERVICE`, thu hồi entitlement và các quyền APPROVED liên quan. Entitlement chỉ là **được phép xin**, không tự sinh ALLOW. |
+| **3. Yêu cầu & phê duyệt** | Nhân viên nêu mục đích/thời hạn; quản lý xem trước sự thay đổi của tập luật và **witness** trước khi duyệt/từ chối; ngăn tự duyệt. |
+| **4. Firewall & kiểm chứng** | Sinh ALLOW theo từng quyền còn hiệu lực, `default DENY`; mô phỏng first-match kèm dấu vết; kiểm toán what-if JSON, so sánh before/after; xuất JSON và nftables lab **draft**. |
+| **5. Giám sát & rủi ro** | Nhập CSV hoặc Zeek JSONL, bỏ log trùng, thống kê các kết nối ngoài quyền và phân loại rủi ro theo heuristic. |
+| **6. Vòng đời & nhật ký** | Thu hồi có xem trước ảnh hưởng, đồng bộ hết hạn, chuyển vai trò/đổi IP, vô hiệu hóa máy chủ, audit trail và xuất báo cáo Markdown/JSON. |
 
-| Phân hệ | Tệp xử lý chính | Ý nghĩa thực tế |
-|---|---|---|
-| 1. Quản lý tài nguyên mạng | `core/workflow.py`, `core/database.py` | Thêm người dùng, IP thiết bị, máy chủ, dịch vụ, độ nhạy cảm, chủ sở hữu |
-| 2. RBAC / quyền chuẩn | `core/workflow.py`, bảng `entitlements` | Vai trò có quyền **đề nghị** dịch vụ nào (không tự động mở firewall) |
-| 3. Yêu cầu và phê duyệt | `core/workflow.py` | Phiếu có mục đích/thời hạn, phê duyệt/từ chối, ngăn tự duyệt, kiểm tra entitlement |
-| 4. Sinh và kiểm toán luật | `core/policy.py`, `core/auditor.py`, `core/exporters.py` | Từ quyền APPROVED sinh ALLOW cụ thể, mô phỏng first-match, tìm quyền thừa/thiếu qua witness, xuất bản nháp |
-| 5. Giám sát và rủi ro | `core/monitoring.py` | Nhập CSV/Zeek JSONL, đối chiếu luồng với quyền, phân loại cảnh báo, đánh giá rủi ro dạng quy tắc |
-| 6. Vòng đời và báo cáo | `core/workflow.py`, `core/reports.py` | Hết hạn, thu hồi, chuyển vai trò, đổi IP, nghỉ việc, vô hiệu hóa tài nguyên, audit trail, tải báo cáo |
+**Trang tổng quan:** KPI theo dữ liệu, các gợi ý ưu tiên rà soát, bản đồ kết nối của những quyền đã duyệt, lịch sử hành động và sơ đồ vòng đời.
 
-**Điểm cốt lõi:** yêu cầu kết nối mạng (packet) **không tự sinh ALLOW**. Một **phiếu yêu cầu cấp quyền** được phê duyệt mới có thể sinh luật, dựa trên vai trò và tài nguyên đã khai báo.
+## 3. Kịch bản bảo vệ thực tế: CRM cho phòng Kinh doanh
 
-## III. Demo end-to-end cho thầy — không lệ thuộc 5 luật mẫu
+Bộ dữ liệu có sẵn cho Kế toán, Nhân sự, Portal, DNS, DB. Người dùng thử **tạo CRM hoàn toàn mới** để chứng minh tính mở:
 
-**Tình huống 1 — Mở quyền cho một nhân viên theo nghiệp vụ**
+1. Đăng nhập **`admin` → Tài nguyên mạng → Thêm máy chủ**: nhập `CRM Lab`, IP `10.20.4.10`, phòng ban `SALES`, mức `MEDIUM`, chủ sở hữu `Phòng Kinh doanh` → lưu. **CRM xuất hiện ngay cả khi chưa có dịch vụ**.
+2. **Thêm dịch vụ**: chọn CRM Lab, `HTTPS`, `TCP`, port `443` → lưu. Nếu tạo trùng IP hoặc trùng service, hệ thống trả thông báo dễ hiểu.
+3. **Vai trò & quyền chuẩn → Thêm quyền chuẩn**: chọn vai trò `SALES`, dịch vụ `CRM Lab / HTTPS`.
+4. **Đăng xuất → đăng nhập `nam` → Yêu cầu truy cập**: chọn CRM Lab, nêu mục đích, thời hạn 3 ngày → gửi. Phiếu `PENDING`, firewall **chưa sinh luật**.
+5. **Đăng xuất → đăng nhập `approver` → Yêu cầu truy cập**: mở phiếu CRM của Nam → **xem trước tác động**, witness và số ô phân hoạch thay đổi → duyệt, nêu lý do.
+6. **Firewall & kiểm chứng**: xuất hiện ALLOW `10.10.30.10 → 10.20.4.10 / TCP 443`, kèm mã phiếu. Thử mô phỏng IP nguồn khác → DENY.
+7. **Vòng đời & nhật ký → Xem & thu hồi** phiếu → xem tác động và xác nhận. Quay lại **Firewall & kiểm chứng**, kết nối trên đổi thành DENY trong mô phỏng.
+8. **Giám sát & rủi ro**: nhập file `samples/traffic.csv` ở định dạng CSV, thử `samples/zeek_conn.jsonl` ở định dạng Zeek.
 
-1. Đăng nhập `quang` (EMPLOYEE) → **3. Yêu cầu & phê duyệt** → chọn `Accounting Application / HTTPS` → nêu mục đích, đặt 2 ngày → gửi. Trạng thái `PENDING`.
-2. Đăng xuất → vào `approver` → **3. Yêu cầu & phê duyệt** → chọn phiếu của Quang → APPROVE, điền lý do. Nếu không có quyền chuẩn cho ACCOUNTING, hệ thống từ chối phê duyệt.
-3. Vào **4. Sinh luật & kiểm toán** → xuất hiện luật ALLOW nguồn `10.10.10.11` → đích `10.20.1.10` TCP/443, có `provenance` chứa mã phiếu.
-4. Nhập packet trên để thấy ALLOW. Nhập `10.10.30.10` (SALES) đến cùng đích để thấy DENY.
-5. Vào **6. Vòng đời** → thu hồi phiếu vừa duyệt. Quay lại **4** → luật đó không còn được sinh. Đây là cơ chế thu hồi quyền có hiệu lực ngay trong mô phỏng.
+Ảnh tham khảo trong thư mục `docs/`.
 
-**Tình huống 2 — Phát hiện ALLOW quá rộng**
+## 4. Kiến trúc mã nguồn
 
-1. Đăng nhập `admin` → **4. Sinh luật & kiểm toán**.
-2. Ở What-if, tải `samples/what_if_broad.json`.
-3. Hệ thống báo `OVERPERMISSIVE` (cho quá nhiều nguồn truy cập ứng dụng kế toán) và `UNDERPERMISSIVE` (bỏ qua các quyền hợp lệ khác), kèm witness và số vùng quyết định thay đổi.
-4. File này **chỉ được so sánh**, không ghi đè quyền được phê duyệt hay luật có hiệu lực.
-
-**Tình huống 3 — Giám sát từ dữ liệu quan sát**
-
-1. Vào **5. Giám sát truy cập** bằng `admin`/`approver`.
-2. Tải `samples/traffic.csv`, chọn `csv`, bấm **Nhập log**. Có thể thử `samples/zeek_conn.jsonl` với định dạng `zeek`.
-3. Hệ thống phân loại các luồng không thuộc quyền đã được phê duyệt. Với log CSV chứa `observed_action=ALLOW`, kết quả là `LOGGED_ALLOW_OUTSIDE_ENTITLEMENT` — chỉ đáng tin nếu cột ALLOW đến từ nhật ký thực thi đáng tin cậy.
-4. Mục **6** cho phép tải báo cáo kiểm toán Markdown hoặc JSON.
-
-**Tình huống 4 — Logic mở**
-
-1. Admin tạo máy chủ `New CRM` IP `10.20.4.10` và dịch vụ HTTPS TCP/443 ở **1**.
-2. Admin cấp entitlement `SALES → New CRM/HTTPS` ở **2**.
-3. `nam` gửi phiếu ở **3**; `approver` phê duyệt; ở **4** xuất hiện luật mới đúng IP/port và nguồn gốc phiếu mà **không sửa dòng code nào**.
-
-## IV. Chạy qua Terminal — không cần Streamlit
-
-Khởi tạo database lab (chỉ thực hiện seed nếu database trống):
-
-```powershell
-python cli.py init
-python cli.py status
-python cli.py policy
-python cli.py simulate --src 10.10.10.10 --dst 10.20.1.10 --proto TCP --port 443
-python cli.py audit
-python cli.py analyze
-python cli.py compare samples/what_if_broad.json
-python cli.py export generated_policy.json
-python cli.py export-nft-lab-draft firewall_lab_draft.nft
-python cli.py report
+```text
+AccessFlow_V2/
+├── run.py                      # Lệnh chạy duy nhất: FastAPI + giao diện web
+├── backend/
+│   ├── app.py                 # REST API, schema, kiểm quyền theo vai trò
+│   ├── auth.py                # Cookie ký HMAC, giới hạn thử sai cơ bản
+│   └── insights.py            # Gợi ý rủi ro từ dữ liệu đang có
+├── web/
+│   ├── index.html
+│   ├── styles.css             # Thiết kế responsive, tự viết, không dùng CDN
+│   └── js/
+│       ├── app.js             # Điều phối UI / sự kiện
+│       ├── api.js             # Giao tiếp API
+│       ├── views.js           # 7 trang giao diện
+│       └── utils.js           # SVG icons, bảng, format, escape HTML
+├── core/
+│   ├── database.py            # SQLite WAL, transactions, audit trail
+│   ├── security.py            # Hash password, IP validation, role gates
+│   ├── workflow.py            # Entitlement, request, approve, revoke, expiry
+│   ├── policy.py              # Rule generator, first-match, provenance
+│   ├── auditor.py             # Exact partition, witness, shadowing, what-if
+│   ├── monitoring.py          # Đọc CSV/Zeek log, đánh giá dấu hiệu
+│   ├── exporters.py           # Xuất JSON/nftables bản nháp phòng lab
+│   ├── reports.py             # Báo cáo kiểm toán
+│   └── demo.py                # Seed tài khoản/tài nguyên giả định
+├── tests/
+│   ├── test_system.py         # 49 kiểm thử nghiệp vụ cũ
+│   └── test_api.py            # 6 kiểm thử REST API tích hợp
+├── samples/                   # Bộ dữ liệu log và chính sách sai
+├── docs/                      # Kiến trúc, kiểm thử, hướng bảo vệ
+└── runtime/                   # TỰ TẠO / .gitignore / không đóng trong ZIP
 ```
 
-Nhập log bằng CLI (chỉ sử dụng tài khoản demo trong lab):
+**Điểm mạnh thiết kế:** Core không phụ thuộc giao diện. FastAPI làm HTTP API; phần web là HTML/CSS/JavaScript chia module không dùng thư viện ngoài nên **một lệnh Python chạy được hết**. Có thể thay web bằng React/Vue, thay exporter cho firewall khác, thêm adapter nhập log mà không cần viết lại phần lõi.
 
-```powershell
-python cli.py import-traffic samples/traffic.csv --format csv --actor admin --password "Demo@2026!"
-python cli.py monitor
-python cli.py expire --actor admin --password "Demo@2026!"
-```
-
-Lưu ý: truyền mật khẩu qua tham số CLI có thể bị ghi vào lịch sử lệnh; **chỉ dùng cách này trong lab với mật khẩu demo**. Khi triển khai thực tế cần dùng prompt bảo mật, xác thực phù hợp và không đưa mật khẩu lên dòng lệnh.
-
-## V. Kiểm thử
+## 5. Test và chạy CLI
 
 ```powershell
 python -m unittest discover -s tests -v
+python cli.py status
+python cli.py audit
+python cli.py compare samples/what_if_broad.json
 ```
 
-Mã nguồn đã được kiểm thử bằng Python 3.13 (49 test thành công khi đóng gói). Chạy lại trên máy của bạn để lưu ảnh Terminal cho báo cáo. Thư viện Streamlit chưa được khởi chạy bằng trình duyệt trong môi trường tạo ZIP, vì vậy cần xác nhận UI trên máy cá nhân.
+**Kiểm thử trên máy đóng gói:** 49 test core + 6 test tích hợp REST = **55/55 đạt** (xem `docs/KIEM_THU_V2.md`). Màn hình login, dashboard, inventory và luồng CRM đã được dựng/chạy bằng Chromium kết hợp API từ FastAPI TestClient. Việc truy cập trực tiếp bằng Chrome/Edge trên máy Windows cần được xác nhận khi bạn chạy local.
 
-## VI. Logic mở và khả năng tích hợp trong thực tế
+Có thể xem API mô tả tại **http://127.0.0.1:8000/api/docs** (Swagger UI phụ thuộc tài nguyên ngoài nếu mạng chặn; không cần Swagger để dùng web).
 
-- **Dữ liệu mở:** tạo người dùng, tài nguyên, dịch vụ, vai trò, phiếu mới trong SQLite; không hard-code 5 luật R1–R5.
-- **Chính sách mở:** `Rule` là dữ liệu chuẩn hóa; `core/exporters.py` có giao diện `PolicyExporter`, `JSONExporter` và `NftablesLabDraftExporter`. Có thể bổ sung adapter cho firewall khác mà giữ nguyên nghiệp vụ.
-- **Giám sát mở:** `parse_blob()` nhận CSV hoặc Zeek conn.log dạng JSON-lines, có thể bổ sung adapter khác.
-- **Tách lớp:** Streamlit gọi `AccessService`/Policy/Auditor; lớp xử lý hoạt động độc lập qua CLI và unit test.
-- **Kiểm chứng:** audit so sánh tập lưu lượng ALLOW của chính sách ứng viên với quyền đã duyệt. Phân hoạch chính xác mọi ranh giới CIDR/port; `INCONCLUSIVE` khi vượt `max_cells`, không nói là PASS khi chưa chứng minh.
-- **Lộ trình thực:** kết nối IdP/DHCP để xác thực người–thiết bị–IP; nhập cấu hình firewall thực (với unsupported semantics được báo lỗi); duyệt thay đổi, kiểm chứng trên VM cách ly, rollback, rồi mới cân nhắc triển khai có kiểm soát.
+## 6. Chuyển từ phiên bản đã đẩy lên GitHub
 
-## VII. Giới hạn trung thực
+**Không ghi đè ngay vào bản V1 đang chạy khi chưa test.** Hãy thử V2 ở thư mục riêng trước. Khi đã đồng ý:
 
-1. **Không phải firewall vận hành thật.** Hệ thống hỗ trợ quản lý cấp quyền và mô phỏng ALLOW/DENY. Tệp nftables chỉ là **bản nháp lab**, không được kiểm tra cú pháp bằng nft trên môi trường hiện tại và không tự áp dụng.
-2. **Không phải IAM/RBAC production.** Login Streamlit, không có SSO/MFA, rate limiting, HTTPS reverse proxy, bảo vệ chống chỉnh DB trực tiếp hoặc hardening triển khai. SQLite local phù hợp học tập và prototype đơn máy.
-3. **IP không phải danh tính.** Chỉ minh họa mỗi người có IPv4 tĩnh duy nhất; không giải quyết NAT, DHCP, mạng không tin cậy, shared device và mạo danh IP.
-4. **Giám sát không chứng minh firewall đã ALLOW.** Zeek quan sát kết nối, có thể thấy cả lưu lượng bị chặn ở điểm khác; lịch sử log hiện **được so sánh với quyền hiện hành**, chưa tái dựng quyền tại thời điểm log. Risk score chỉ là heuristic.
-5. **Audit hữu hạn:** IPv4 stateless, TCP/UDP/ICMP, destination port; không có state, NAT, IPv6, source port, TCP flags, interface. Nếu số ô phân hoạch quá lớn trả INCONCLUSIVE.
-6. **Chính sách được sinh từ quyền duyệt, không tự suy ra quyền từ traffic.** Entitlement là cấu hình nghiệp vụ do người có thẩm quyền định nghĩa; đây là lý do mỗi ALLOW có căn cứ.
-7. **Expiration:** hết hạn được loại khỏi luật *ngay khi đọc* dù chưa bấm đồng bộ. Muốn chuyển trạng thái trong database phải chạy Đồng bộ hoặc `cli.py expire` (có thể nối scheduler tương lai).
-8. **Đầu ra nftables chỉ cho mô hình forward IPv4 lab.** Không bao gồm NAT/state/interface hoặc cấu hình đang tồn tại. Không chạy trên máy kết nối thật chỉ vì đã sinh được file.
+1. Trong repo Git trên Windows: `git switch -c feature/accessflow-v2` để tạo nhánh mới.
+2. Sao lưu `runtime/access.sqlite3` nếu đang dùng dữ liệu thực hành. Không commit `runtime/`.
+3. Copy **nội dung bên trong** thư mục `AccessFlow_V2/` vào thư mục repo, thay các file cũ cùng tên. Xóa `app.py` và các lệnh chạy Streamlit cũ để tránh nhầm lẫn.
+4. Chạy `python -m pip install -r requirements.txt`, `python -m unittest discover -s tests -v`, rồi `python run.py`.
+5. Chỉ khi kiểm thử đạt và UI hoạt động thì `git add .`, `git commit -m "Redesign AccessFlow V2 web platform"`, `git push -u origin feature/accessflow-v2`.
 
-## VIII. Cấu trúc thư mục
+Core vẫn sử dụng schema SQLite cũ, giữ nguyên dữ liệu nếu copy database vào `runtime/access.sqlite3` trong thư mục V2; **đảm bảo sao lưu trước khi đổi phiên bản**.
 
-```text
-Firewall_Access_Lifecycle/
-├── app.py                # Streamlit — 6 phân hệ
-├── cli.py                # CLI độc lập
-├── requirements.txt      # streamlit
-├── core/
-│   ├── database.py       # SQLite, transaction, audit trail
-│   ├── security.py       # hash mật khẩu, kiểm tra quyền hệ thống
-│   ├── workflow.py       # tài nguyên, entitlement, cấp/duyệt/thu hồi
-│   ├── demo.py           # dữ liệu doanh nghiệp giả định
-│   ├── policy.py         # Rule, Packet, generator, first-match
-│   ├── auditor.py        # exact partition, witness, what-if, shadowing
-│   ├── monitoring.py     # CSV/Zeek logs, rủi ro
-│   ├── exporters.py      # JSON/nftables lab DRAFT adapters
-│   └── reports.py        # xuất báo cáo
-├── samples/
-│   ├── traffic.csv
-│   ├── zeek_conn.jsonl
-│   └── what_if_broad.json
-├── docs/
-│   ├── THIET_KE_VA_LUONG_XU_LY.md
-│   └── KICH_BAN_BAO_VE.md
-├── tests/
-│   └── test_system.py
-└── runtime/              # tự tạo khi chạy; KHÔNG đưa vào ZIP
-```
+## 7. Giới hạn / điều chưa thể khẳng định
 
-**Đọc tiếp:** `docs/THIET_KE_VA_LUONG_XU_LY.md` để hiểu từng module, `docs/KICH_BAN_BAO_VE.md` để chuẩn bị trả lời thầy.
+- **Chưa chặn gói tin thật**, chưa tương tác trực tiếp nftables hoặc Windows Firewall, chưa tự đẩy cấu hình, chưa rollback mạng thật. Bản nháp nftables không phải file production.
+- `default DENY` và first-match chỉ cho IPv4 stateless TCP/UDP/ICMP, destination port. Không hỗ trợ state tracking, NAT, IPv6, source port, interface, routing.
+- RBAC dựa trên dữ liệu vai trò được cấu hình, không định danh danh tính mạng đáng tin cậy. IP tĩnh lab không chứng minh chủ sở hữu máy; thực tế cần IdP/DHCP/VPN/agent.
+- Phân hoạch logic chỉ **chính xác trong mô hình hỗ trợ nếu complete=true**. Quá `max_cells` thì `INCONCLUSIVE`, không được hiểu là PASS.
+- Baseline audit dùng quyền đã duyệt làm nguồn chuẩn; nó kiểm tra **tính nhất quán nội bộ**, không chứng nhận mạng an toàn. What-if với chính sách độc lập phát hiện cấp quyền quá rộng/thiếu quyền.
+- Điểm rủi ro chỉ là heuristic. Zeek không có hành động ALLOW/DENY của firewall; log được so sánh với **quyền hiện tại**, chưa tái dựng lịch sử quyền ở thời điểm phát sinh log.
+- Cơ chế phiên ký cookie chỉ hỗ trợ **prototype localhost**, không có SSO/MFA, CSRF hardening hoàn chỉnh, rate limit bền vững hay audit log chống sửa DB. Không public dịch vụ trên Internet.
+
+**Khi trình bày thầy:** Các luật ALLOW là *kết quả* của phê duyệt dựa trên yêu cầu nghiệp vụ và entitlement, không phải 5 luật đặt tùy ý. Quan trọng nhất là chứng minh được việc cấp/thay đổi/thu hồi quyền và tác động chính sách với input mới bất kỳ trong mô hình hỗ trợ.
