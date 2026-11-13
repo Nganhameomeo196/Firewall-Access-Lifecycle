@@ -1,0 +1,8 @@
+{
+  "schema": "firewall-access-lifecycle/v1",
+  "default_action": "DENY",
+  "rules": [
+    {"id":"BROAD-ALLOW","priority":1,"source":"0.0.0.0/0","destination":"10.20.1.10/32","protocol":"TCP","port":443,"action":"ALLOW","reason":"Ví dụ cố tình sai: ai cũng truy cập ứng dụng kế toán"},
+    {"id":"EXAMPLE-CATCHALL","priority":9999,"source":"ANY","destination":"ANY","protocol":"ANY","port":"ANY","action":"DENY"}
+  ]
+}

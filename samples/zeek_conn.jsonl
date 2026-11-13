@@ -1,0 +1,2 @@
+{"ts":1794301200.0,"id.orig_h":"10.10.10.10","id.resp_h":"10.20.1.10","id.resp_p":443,"proto":"tcp","service":"ssl"}
+{"ts":1794301300.0,"id.orig_h":"10.10.30.10","id.resp_h":"10.20.2.10","id.resp_p":5432,"proto":"tcp"}
